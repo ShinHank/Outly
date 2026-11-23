@@ -819,7 +819,10 @@ class _GalaEditorState extends State<GalaEditor> {
                                 case 'web':
                                   openPlacePage(
                                     context,
+                                    api: widget.api,
                                     name: locations[index].name,
+                                    latitude: locations[index].latitude,
+                                    longitude: locations[index].longitude,
                                     website: locations[index].website,
                                   );
                                 case 'rename':

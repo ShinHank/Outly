@@ -18,6 +18,7 @@ import '../models/weather_info.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/expense_dialog.dart';
 import '../widgets/nearby_section.dart';
 import '../widgets/plan_card.dart';
 import 'gala_editor.dart';
@@ -244,7 +245,8 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
   }
 
   String nameOf(String id) {
-    if (id == hostId) return 'You';
+    // Older galas may still reference the host.
+    if (id == hostId) return 'Host';
     for (final person in widget.people) {
       if (person.id == id) return person.name.isEmpty ? 'Unnamed' : person.name;
     }
@@ -287,108 +289,14 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
     List<Participant> invited, [
     Expense? existing,
   ]) async {
-    final everyone = [hostId, ...invited.map((person) => person.id)];
-    final title = TextEditingController(text: existing?.title);
-    final amount = TextEditingController(
-      text: existing == null ? '' : existing.amount.toString(),
-    );
-    var paidBy = existing != null && everyone.contains(existing.paidBy)
-        ? existing.paidBy
-        : hostId;
-    final split = <String>{
-      ...(existing?.splitWith ?? everyone).where(everyone.contains),
-    };
+    if (invited.isEmpty) {
+      message('Invite guests first. Expenses are split between guests.');
+      return;
+    }
     final result = await showDialog<Expense>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: Text(existing == null ? 'Add expense' : 'Edit expense'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: title,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(labelText: 'What for?'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: amount,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: '$currency ',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: paidBy,
-                  decoration: const InputDecoration(labelText: 'Paid by'),
-                  items: everyone
-                      .map(
-                        (id) => DropdownMenuItem(
-                          value: id,
-                          child: Text(nameOf(id)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setLocal(() => paidBy = value ?? paidBy),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Split between',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                ...everyone.map(
-                  (id) => CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    value: split.contains(id),
-                    title: Text(nameOf(id)),
-                    onChanged: (value) => setLocal(
-                      () => value == true ? split.add(id) : split.remove(id),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = double.tryParse(
-                  amount.text.trim().replaceAll(',', ''),
-                );
-                if (value == null || value <= 0 || split.isEmpty) return;
-                Navigator.pop(
-                  dialogContext,
-                  Expense(
-                    id: existing?.id,
-                    title: title.text.trim().isEmpty
-                        ? 'Expense'
-                        : title.text.trim(),
-                    amount: value,
-                    paidBy: paidBy,
-                    splitWith: split.toList(),
-                  ),
-                );
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => ExpenseDialog(people: invited, existing: existing),
     );
-    title.dispose();
-    amount.dispose();
     if (result == null || !mounted) return;
     final list = [...gala.expenses];
     final index = list.indexWhere((item) => item.id == result.id);
@@ -420,15 +328,11 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
       ..writeln()
       ..writeln('Total: ${money(total)}');
     final transfers = settle(balances(gala.expenses));
-    if (transfers.isNotEmpty) {
-      buffer
-        ..writeln()
-        ..writeln('Settle up:');
-      for (final t in transfers) {
-        buffer.writeln(
-          '• ${nameOf(t.from)} pays ${nameOf(t.to)} ${money(t.amount)}',
-        );
-      }
+    buffer
+      ..writeln()
+      ..writeln(transfers.isEmpty ? 'Everyone is settled up.' : 'Who owes who:');
+    for (final t in transfers) {
+      buffer.writeln('• ${nameOf(t.from)} owes ${nameOf(t.to)} ${money(t.amount)}');
     }
     return buffer.toString().trimRight();
   }
@@ -493,14 +397,44 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
           ),
         ),
       ],
-      if (transfers.isNotEmpty) ...[
+      if (expenses.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        const Text(
+          'Who owes who',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+        ),
         const SizedBox(height: 8),
-        const Text('Settle up', style: TextStyle(fontWeight: FontWeight.w700)),
-        for (final t in transfers)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '${nameOf(t.from)} pays ${nameOf(t.to)} ${money(t.amount)}',
+        if (transfers.isEmpty)
+          const MessageCard('Everyone is settled up.')
+        else
+          Card(
+            child: Column(
+              children: [
+                for (var i = 0; i < transfers.length; i++) ...[
+                  if (i > 0) const Divider(),
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: context.soft,
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 20,
+                        color: context.brandColor,
+                      ),
+                    ),
+                    title: Text(
+                      '${nameOf(transfers[i].from)} owes ${nameOf(transfers[i].to)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    trailing: Text(
+                      money(transfers[i].amount),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
       ],
@@ -738,7 +672,10 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 // Tapping a stop opens its website (or a web search).
                 onTap: () => openPlacePage(
                   context,
+                  api: widget.api,
                   name: places[i].name,
+                  latitude: places[i].latitude,
+                  longitude: places[i].longitude,
                   website: places[i].website,
                 ),
               ),

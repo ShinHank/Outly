@@ -241,7 +241,10 @@ class _NearbySectionState extends State<NearbySection> {
       // Tap a place to read about it before deciding to add it.
       onTap: () => openPlacePage(
         context,
+        api: widget.api,
         name: place.name,
+        latitude: place.latitude,
+        longitude: place.longitude,
         website: place.website,
       ),
       trailing: added

@@ -4,6 +4,7 @@ import '../models/participant.dart';
 import '../services/local_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/participant_dialog.dart';
 
 class ParticipantsPage extends StatelessWidget {
   const ParticipantsPage({
@@ -17,53 +18,10 @@ class ParticipantsPage extends StatelessWidget {
   final VoidCallback onChanged;
 
   Future<void> add(BuildContext context, [Participant? existing]) async {
-    final name = TextEditingController(text: existing?.name);
-    final email = TextEditingController(text: existing?.email);
     final result = await showDialog<Participant>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(existing == null ? 'Add participant' : 'Edit participant'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (name.text.trim().isEmpty) return;
-              Navigator.pop(
-                dialogContext,
-                Participant(
-                  id: existing?.id,
-                  name: name.text.trim(),
-                  email: email.text.trim(),
-                  availableDates: existing?.availableDates ?? const [],
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (_) => ParticipantDialog(existing: existing),
     );
-    name.dispose();
-    email.dispose();
     if (result != null) {
       final list = [...people];
       final index = list.indexWhere((person) => person.id == result.id);

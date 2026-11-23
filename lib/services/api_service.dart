@@ -75,6 +75,45 @@ class ApiService {
   Future<String?> reverseGeocode(double lat, double lon) =>
       _guard('reverseGeocode($lat, $lon)', () => _reverseGeocode(lat, lon));
 
+  final _cityCache = <String, String>{};
+
+  /// City (or town/municipality) at a point, used to keep web searches to the
+  /// right branch. Cached; returns '' when unknown, never throws.
+  Future<String> cityOf(double lat, double lon) async {
+    final key = '${lat.toStringAsFixed(2)},${lon.toStringAsFixed(2)}';
+    final cached = _cityCache[key];
+    if (cached != null) return cached;
+    try {
+      final city = await _guard('cityOf($lat, $lon)', () async {
+        final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+          'lat': '$lat',
+          'lon': '$lon',
+          'format': 'jsonv2',
+          'zoom': '12',
+          'addressdetails': '1',
+          'email': contactEmail,
+        });
+        final response = await http
+            .get(uri, headers: _headers)
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode != 200) return '';
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final address = (json['address'] as Map?)?.cast<String, dynamic>() ?? {};
+        for (final field in const [
+          'city', 'town', 'municipality', 'village', 'city_district', 'county',
+        ]) {
+          final value = (address[field] as String? ?? '').trim();
+          if (value.isNotEmpty) return value;
+        }
+        return '';
+      });
+      if (city.isNotEmpty) _cityCache[key] = city;
+      return city;
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<String?> _reverseGeocode(double lat, double lon) async {
     final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
       'lat': '$lat',
