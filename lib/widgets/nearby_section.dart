@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/geo.dart';
+import '../core/links.dart';
 import '../models/nearby_place.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -123,6 +124,8 @@ class _NearbySectionState extends State<NearbySection> {
         HintText(
           'SDG 8 · Decent work and economic growth. Spending at independent local shops and eateries keeps income in the community.',
         ),
+        const SizedBox(height: 4),
+        HintText('Tap a place to open its website. Tap + to add it as a stop.'),
         const SizedBox(height: 12),
         if (!hasOrigin)
           const MessageCard(
@@ -235,6 +238,12 @@ class _NearbySectionState extends State<NearbySection> {
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+      // Tap a place to read about it before deciding to add it.
+      onTap: () => openPlacePage(
+        context,
+        name: place.name,
+        website: place.website,
+      ),
       trailing: added
           ? Icon(Icons.check_circle, color: context.brandColor)
           : IconButton(

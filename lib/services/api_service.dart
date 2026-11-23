@@ -40,6 +40,7 @@ class ApiService {
       'format': 'jsonv2',
       'limit': '5',
       'addressdetails': '1',
+      'extratags': '1',
       'email': contactEmail,
     });
     final response = await http
@@ -60,6 +61,10 @@ class ApiService {
             name: result['display_name'] as String? ?? '',
             latitude: double.tryParse(result['lat']?.toString() ?? '') ?? 0,
             longitude: double.tryParse(result['lon']?.toString() ?? '') ?? 0,
+            website: cleanUrl(
+              (result['extratags'] as Map?)?['website'] ??
+                  (result['extratags'] as Map?)?['contact:website'],
+            ),
           );
         })
         .where((item) => item.latitude != 0 && item.longitude != 0)

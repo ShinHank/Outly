@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/capture.dart';
 import '../core/constants.dart';
 import '../core/format.dart';
+import '../core/links.dart';
 import '../core/schedule.dart';
 import '../models/expense.dart';
 import '../models/gala.dart';
@@ -272,6 +273,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
             local: !place.isChain,
             // Same day as the last stop, so trips stay grouped sensibly.
             date: gala.places.isEmpty ? '' : gala.places.last.date,
+            website: place.website,
           ),
         ],
       ),
@@ -721,10 +723,24 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                           ),
                         ),
                       ),
-                    Icon(Icons.my_location, size: 18, color: context.brandColor),
+                    IconButton(
+                      tooltip: 'Show on map',
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        Icons.my_location,
+                        size: 18,
+                        color: context.brandColor,
+                      ),
+                      onPressed: () => mapController.move(points[i], 16),
+                    ),
                   ],
                 ),
-                onTap: () => mapController.move(points[i], 16),
+                // Tapping a stop opens its website (or a web search).
+                onTap: () => openPlacePage(
+                  context,
+                  name: places[i].name,
+                  website: places[i].website,
+                ),
               ),
             ],
           ],

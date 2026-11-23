@@ -116,3 +116,14 @@ String whenLabel(DateTime start, DateTime? end) {
 /// "Day 2 · Sat, Nov 21" for the [index]th day (0-based) of an outing.
 String dayLabel(int index, DateTime start) =>
     'Day ${index + 1} · ${shortDate(addDays(start, index))}';
+
+/// Turns an OpenStreetMap website tag into a usable https URL, or '' if empty.
+String cleanUrl(Object? raw) {
+  if (raw is! String) return '';
+  var url = raw.split(';').first.trim();
+  if (url.isEmpty) return '';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://$url';
+  }
+  return url;
+}

@@ -421,7 +421,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   size: 28,
                 ),
               )
-            : Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true),
+            : Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                gaplessPlayback: true,
+              ),
       ),
     );
   }

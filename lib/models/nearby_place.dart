@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/format.dart';
 import '../core/geo.dart' as geo;
 
 /// What kind of place to look for around the first stop. Each category is a
@@ -43,6 +44,7 @@ class NearbyPlace {
     required this.distanceKm,
     required this.detail,
     required this.isChain,
+    this.website = '',
   });
 
   final String name;
@@ -55,6 +57,9 @@ class NearbyPlace {
 
   /// True when OpenStreetMap tags it as part of a brand or chain.
   final bool isChain;
+
+  /// Website from OpenStreetMap, or empty when unknown.
+  final String website;
 
   /// Builds a place from one Overpass element. Returns null for unnamed
   /// places or ones without coordinates.
@@ -90,6 +95,9 @@ class NearbyPlace {
       distanceKm: geo.distanceKm(originLat, originLon, lat, lon),
       detail: detail,
       isChain: tags.containsKey('brand') || tags.containsKey('brand:wikidata'),
+      website: cleanUrl(
+        tags['website'] ?? tags['contact:website'] ?? tags['url'],
+      ),
     );
   }
 
@@ -121,6 +129,7 @@ class NearbyPlace {
       distanceKm: geo.distanceKm(originLat, originLon, lat, lon),
       detail: [kind, street].where((part) => part.isNotEmpty).join(' · '),
       isChain: extra.containsKey('brand') || extra.containsKey('brand:wikidata'),
+      website: cleanUrl(extra['website'] ?? extra['contact:website']),
     );
   }
 }

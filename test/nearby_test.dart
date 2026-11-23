@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/core/format.dart';
 import '../lib/core/geo.dart';
 import '../lib/models/nearby_place.dart';
 
@@ -82,5 +83,18 @@ void main() {
       NearbyPlace.fromNominatim({'lat': '1', 'lon': '1', 'type': 'road'}, lat, lon),
       isNull,
     );
+  });
+
+  test('reads and cleans websites', () {
+    expect(cleanUrl('example.com'), 'https://example.com');
+    expect(cleanUrl('http://a.ph;https://b.ph'), 'http://a.ph');
+    expect(cleanUrl(''), '');
+    expect(cleanUrl(null), '');
+    final p = NearbyPlace.fromOverpass({
+      'lat': 14.6,
+      'lon': 120.98,
+      'tags': {'name': 'Cafe Uno', 'amenity': 'cafe', 'contact:website': 'cafeuno.ph'},
+    }, lat, lon)!;
+    expect(p.website, 'https://cafeuno.ph');
   });
 }

@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/capture.dart';
 import '../core/constants.dart';
 import '../core/format.dart';
+import '../core/links.dart';
 import '../core/schedule.dart';
 import '../models/gala.dart';
 import '../models/location.dart';
@@ -183,41 +184,6 @@ class _GalaEditorState extends State<GalaEditor> {
     });
   }
 
-  Future<void> pickDay(int index) async {
-    final stop = locations[index];
-    final current = stopDay(stop, date);
-    final picked = await showDialog<int>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Which day?'),
-        children: [
-          for (var i = 0; i < dayCount; i++)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, i),
-              child: Row(
-                children: [
-                  Icon(
-                    i == current
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 20,
-                    color: dialogContext.brandColor,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(dayLabel(i, date)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-    if (picked == null || !mounted) return;
-    updateStop(
-      index,
-      stop.copyWith(date: picked == 0 ? '' : ymd(addDays(date, picked))),
-    );
-  }
-
   Future<void> loadWeather() async {
     final request = ++weatherRequest;
     if (lat == 0 || lon == 0) {
@@ -269,6 +235,7 @@ class _GalaEditorState extends State<GalaEditor> {
           results.first.name,
           results.first.latitude,
           results.first.longitude,
+          website: results.first.website,
         );
       }
       setState(() {
@@ -289,6 +256,7 @@ class _GalaEditorState extends State<GalaEditor> {
     double longitude, {
     bool local = false,
     bool keepAnchor = false,
+    String website = '',
   }) {
     if (latitude == 0 ||
         longitude == 0 ||
@@ -312,6 +280,7 @@ class _GalaEditorState extends State<GalaEditor> {
         longitude: longitude,
         local: local,
         date: previous?.date ?? '',
+        website: website,
       );
       locations.add(stop);
       // Nearby suggestions are extra stops: the weather and the nearby
@@ -391,14 +360,91 @@ class _GalaEditorState extends State<GalaEditor> {
     });
   }
 
-  Future<void> pickTime(int index) async {
+  /// One dialog for a stop's time and day.
+  Future<void> editWhen(int index) async {
     final old = locations[index];
-    final picked = await showTimePicker(
+    var time = parseTime(old.time);
+    var day = stopDay(old, date);
+    if (day >= dayCount) day = dayCount - 1;
+
+    final saved = await showDialog<bool>(
       context: context,
-      initialTime: parseTime(old.time) ?? const TimeOfDay(hour: 18, minute: 0),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text(shortName(old.name), maxLines: 2),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (multiDay) ...[
+                  DropdownButtonFormField<int>(
+                    initialValue: day,
+                    decoration: const InputDecoration(
+                      labelText: 'Day',
+                      prefixIcon: Icon(Icons.event_outlined),
+                    ),
+                    items: [
+                      for (var i = 0; i < dayCount; i++)
+                        DropdownMenuItem(value: i, child: Text(dayLabel(i, date))),
+                    ],
+                    onChanged: (value) => setLocal(() => day = value ?? day),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime:
+                          time ?? const TimeOfDay(hour: 18, minute: 0),
+                    );
+                    if (picked != null) setLocal(() => time = picked);
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Time',
+                      prefixIcon: const Icon(Icons.access_time),
+                      suffixIcon: time == null
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear time',
+                              icon: const Icon(Icons.close),
+                              onPressed: () => setLocal(() => time = null),
+                            ),
+                    ),
+                    child: Text(
+                      time == null
+                          ? 'No time set'
+                          : timeLabel(formatTime(time!)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
-    if (picked == null || !mounted) return;
-    updateStop(index, old.copyWith(time: formatTime(picked)));
+    if (saved != true || !mounted) return;
+    updateStop(
+      index,
+      old.copyWith(
+        time: time == null ? '' : formatTime(time!),
+        date: day == 0 ? '' : ymd(addDays(date, day)),
+      ),
+    );
   }
 
   Future<void> openPinMap() async {
@@ -716,6 +762,7 @@ class _GalaEditorState extends State<GalaEditor> {
                                 suggestion.name,
                                 suggestion.latitude,
                                 suggestion.longitude,
+                                website: suggestion.website,
                               );
                               setState(() => suggestions = []);
                             },
@@ -761,16 +808,20 @@ class _GalaEditorState extends State<GalaEditor> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: 'Set time',
+                            tooltip: multiDay ? 'Set time and day' : 'Set time',
                             icon: const Icon(Icons.access_time),
-                            onPressed: () => pickTime(index),
+                            onPressed: () => editWhen(index),
                           ),
                           PopupMenuButton<String>(
                             tooltip: 'More',
                             onSelected: (value) {
                               switch (value) {
-                                case 'day':
-                                  pickDay(index);
+                                case 'web':
+                                  openPlacePage(
+                                    context,
+                                    name: locations[index].name,
+                                    website: locations[index].website,
+                                  );
                                 case 'rename':
                                   renameLocation(index);
                                 case 'remove':
@@ -778,11 +829,10 @@ class _GalaEditorState extends State<GalaEditor> {
                               }
                             },
                             itemBuilder: (_) => [
-                              if (multiDay)
-                                const PopupMenuItem(
-                                  value: 'day',
-                                  child: Text('Change day'),
-                                ),
+                              const PopupMenuItem(
+                                value: 'web',
+                                child: Text('View website'),
+                              ),
                               const PopupMenuItem(
                                 value: 'rename',
                                 child: Text('Rename'),
@@ -828,6 +878,7 @@ class _GalaEditorState extends State<GalaEditor> {
                 place.longitude,
                 local: !place.isChain,
                 keepAnchor: true,
+                website: place.website,
               ),
               isAdded: (place) => locations.any(
                 (item) =>
