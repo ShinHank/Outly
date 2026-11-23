@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:gal/gal.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/calendar.dart';
 import '../core/capture.dart';
 import '../core/constants.dart';
 import '../core/format.dart';
@@ -98,6 +103,72 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
     }
   }
 
+  List<String> guestNames() => [
+        for (final person in widget.people)
+          if (gala.participantIds.contains(person.id)) person.name,
+      ];
+
+  /// Opens the phone's own "new event" screen, pre-filled, so the person only
+  /// taps Save. Nothing is written to a file or shared.
+  Future<void> addToCalendar() async {
+    try {
+      final entry = galaToCalendarEntry(gala, guests: guestNames());
+      final opened = await Add2Calendar.addEvent2Cal(
+        Event(
+          title: entry.title,
+          description: entry.description,
+          location: entry.location,
+          startDate: entry.start,
+          // The plugin treats an all-day end as the last day shown.
+          endDate: entry.end,
+          allDay: entry.allDay,
+          iosParams: const IOSParams(reminder: Duration(days: 1)),
+        ),
+      );
+      if (!opened) message('Unable to open your calendar.');
+    } on Exception catch (e) {
+      debugPrint('[Outly] add to calendar failed: $e');
+      message('Unable to open your calendar.');
+    }
+  }
+
+  /// Share sheet for friends: a short invite message plus an .ics file, so
+  /// anyone who receives it can add the gala to their own calendar.
+  Future<void> shareWithFriends() async {
+    try {
+      final guests = guestNames();
+      final ics = galaToIcs(gala, guests: guests);
+      final when = gala.isMultiDay
+          ? '${longDateRange(gala.date, gala.endDate)} · ${gala.dayCount} days'
+          : longDate(gala.date);
+      final stops = [
+        for (final stop in gala.places)
+          if (stop.name.trim().isNotEmpty) stop.name.trim(),
+      ];
+      await SharePlus.instance.share(
+        ShareParams(
+          subject: gala.name,
+          text: [
+            "You're invited: ${gala.name}",
+            when,
+            if (stops.isNotEmpty) stops.join(' → '),
+            'Open the attached file to add it to your calendar.',
+          ].join('\n'),
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(utf8.encode(ics)),
+              mimeType: 'text/calendar',
+              name: '${planFileName(gala.name).replaceAll(RegExp(r'\.\w+$'), '')}.ics',
+            ),
+          ],
+        ),
+      );
+    } on Exception catch (e) {
+      debugPrint('[Outly] share with friends failed: $e');
+      message('Unable to share with friends.');
+    }
+  }
+
   Future<void> shareImage() async {
     try {
       final bytes = await capturePng(planKey, width: 1080);
@@ -145,6 +216,16 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
       appBar: AppBar(
         title: Text(gala.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            tooltip: 'Add to calendar',
+            onPressed: addToCalendar,
+            icon: const Icon(Icons.event_available_outlined),
+          ),
+          IconButton(
+            tooltip: 'Share with friends',
+            onPressed: shareWithFriends,
+            icon: const Icon(Icons.group_outlined),
+          ),
           IconButton(
             tooltip: 'Edit gala',
             onPressed: edit,
@@ -508,6 +589,26 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 liveWeather?.icon ?? weatherIconFor(gala.weatherCode),
                 weatherText,
               ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: addToCalendar,
+                    icon: const Icon(Icons.edit_calendar_outlined),
+                    label: const Text('Add to calendar'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: shareWithFriends,
+                    icon: const Icon(Icons.group_outlined),
+                    label: const Text('Share with friends'),
+                  ),
+                ),
+              ],
+            ),
             if (gala.tags.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 14),

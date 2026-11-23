@@ -43,6 +43,10 @@ class PlanCard extends StatelessWidget {
   static const _padding = 26.0;
   static const _stopGap = 12.0;
 
+  /// Stops stay in one column until it holds this many; only then does a
+  /// second column start, so short lists read top to bottom.
+  static const _firstColumnMax = 6;
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -180,9 +184,19 @@ class PlanCard extends StatelessWidget {
     final extraTags = tags.length - shownTags.length;
     final shownGuests = guests.take(40).toList();
     final extraGuests = guests.length - shownGuests.length;
-    // Two columns of stops across the 308px of usable width.
     const contentWidth = _canvasWidth - _padding * 2;
-    const tileWidth = (contentWidth - _stopGap) / 2;
+    const halfWidth = (contentWidth - _stopGap) / 2;
+    final twoColumns = locations.length > _firstColumnMax;
+    final tileWidth = twoColumns ? halfWidth : contentWidth;
+    Widget stopColumn(int from, int to) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = from; i < to; i++) ...[
+          if (i > from) const SizedBox(height: 12),
+          stopTile(i, multiDay, tileWidth),
+        ],
+      ],
+    );
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: _minHeight),
@@ -234,14 +248,17 @@ class PlanCard extends StatelessWidget {
               const SizedBox(height: 20),
               if (locations.isNotEmpty) ...[
                 caption('STOPS'),
-                Wrap(
-                  spacing: _stopGap,
-                  runSpacing: 12,
-                  children: [
-                    for (var i = 0; i < locations.length; i++)
-                      stopTile(i, multiDay, tileWidth),
-                  ],
-                ),
+                if (!twoColumns)
+                  stopColumn(0, locations.length)
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      stopColumn(0, _firstColumnMax),
+                      const SizedBox(width: _stopGap),
+                      stopColumn(_firstColumnMax, locations.length),
+                    ],
+                  ),
                 const SizedBox(height: 20),
               ],
               if (shownTags.isNotEmpty) ...[

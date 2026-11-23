@@ -209,9 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
       0,
       (total, gala) => total + gala.participantIds.length,
     );
-    final localStops = galas
-        .where((gala) => gala.status != 'Cancelled')
-        .fold<int>(0, (total, gala) => total + gala.localStops);
     return RefreshIndicator(
       onRefresh: load,
       color: context.brandColor,
@@ -225,8 +222,6 @@ class _HomeScreenState extends State<HomeScreen> {
               stat(Icons.event_available_rounded, '${galas.length}', 'Galas'),
               const SizedBox(width: 10),
               stat(Icons.people_alt_outlined, '$totalGuests', 'Guests'),
-              const SizedBox(width: 10),
-              stat(Icons.storefront_outlined, '$localStops', 'Local spots'),
             ],
           ),
           const SizedBox(height: 26),
@@ -518,11 +513,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: context.muted,
                             icon: Icons.people_outline,
                           ),
-                          if (gala.localStops > 0)
-                            pill(
-                              '${gala.localStops} local',
-                              icon: Icons.storefront_outlined,
-                            ),
                           if (gala.tags.isNotEmpty) pill(gala.tags.first),
                         ],
                       ),
