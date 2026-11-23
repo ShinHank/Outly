@@ -35,7 +35,7 @@ class ParticipantsPage extends StatelessWidget {
             TextField(
               controller: email,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
+              decoration: const InputDecoration(labelText: 'Email (optional)'),
             ),
           ],
         ),
@@ -46,9 +46,7 @@ class ParticipantsPage extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
-              if (name.text.trim().isEmpty || email.text.trim().isEmpty) {
-                return;
-              }
+              if (name.text.trim().isEmpty) return;
               Navigator.pop(
                 dialogContext,
                 Participant(
@@ -133,7 +131,7 @@ class ParticipantsPage extends StatelessWidget {
                 person.name,
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-              subtitle: Text(person.email),
+              subtitle: person.email.isEmpty ? null : Text(person.email),
               trailing: IconButton(
                 tooltip: 'Edit',
                 onPressed: () => add(context, person),

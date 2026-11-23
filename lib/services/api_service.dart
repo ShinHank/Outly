@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
@@ -14,7 +16,25 @@ class ApiService {
     'Accept-Language': 'en',
   };
 
-  Future<List<LocationSuggestion>> searchLocations(String query) async {
+  static String _short(String body) =>
+      body.length > 300 ? body.substring(0, 300) : body;
+
+  /// Runs [body] and prints any failure to the console (Android Studio's Run
+  /// or Debug tab) before passing it on. Filter the console by "[Outly API]".
+  Future<T> _guard<T>(String name, Future<T> Function() body) async {
+    try {
+      return await body();
+    } catch (e, stack) {
+      debugPrint('[Outly API] $name failed: ${e.runtimeType}: $e');
+      debugPrintStack(stackTrace: stack, maxFrames: 4, label: '[Outly API] $name');
+      rethrow;
+    }
+  }
+
+  Future<List<LocationSuggestion>> searchLocations(String query) =>
+      _guard('searchLocations("$query")', () => _searchLocations(query));
+
+  Future<List<LocationSuggestion>> _searchLocations(String query) async {
     final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
       'q': query,
       'format': 'jsonv2',
@@ -26,6 +46,7 @@ class ApiService {
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
+      debugPrint('[Outly API] search body: ${_short(response.body)}');
       throw http.ClientException(
         'Location search failed (HTTP ${response.statusCode})',
         uri,
@@ -46,7 +67,10 @@ class ApiService {
   }
 
   /// Best-effort place name for a map pin. Returns null if nothing useful.
-  Future<String?> reverseGeocode(double lat, double lon) async {
+  Future<String?> reverseGeocode(double lat, double lon) =>
+      _guard('reverseGeocode($lat, $lon)', () => _reverseGeocode(lat, lon));
+
+  Future<String?> _reverseGeocode(double lat, double lon) async {
     final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
       'lat': '$lat',
       'lon': '$lon',
@@ -57,7 +81,10 @@ class ApiService {
     final response = await http
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      debugPrint('[Outly API] reverseGeocode: HTTP ${response.statusCode} ${response.body}');
+      return null;
+    }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     final name = (json['name'] as String? ?? '').trim();
     if (name.isNotEmpty) return name;
@@ -78,23 +105,64 @@ class ApiService {
     double lon,
     PlaceCategory category, {
     int radiusMeters = 1500,
-  }) async {
+  }) => _guard(
+    'nearbyPlaces(${category.name}, $lat, $lon)',
+    () => _nearbyPlaces(lat, lon, category, radiusMeters),
+  );
+
+  Future<List<NearbyPlace>> _nearbyPlaces(
+    double lat,
+    double lon,
+    PlaceCategory category,
+    int radiusMeters,
+  ) async {
+    List<NearbyPlace> places;
+    try {
+      places = await _overpass(lat, lon, category, radiusMeters);
+    } catch (overpassError) {
+      // Overpass is a shared public server and is often slow or blocked, so
+      // fall back to Nominatim, which the location search already uses.
+      debugPrint('[Outly API] Overpass failed, trying Nominatim: $overpassError');
+      try {
+        places = await _nominatimNearby(lat, lon, category, radiusMeters);
+      } catch (nominatimError) {
+        throw http.ClientException(
+          'Nearby search failed. Overpass: $overpassError. Nominatim: $nominatimError',
+          Uri.https('overpass-api.de', '/api/interpreter'),
+        );
+      }
+    }
+    final seen = <String>{};
+    final unique = <NearbyPlace>[];
+    for (final place in places) {
+      // The same shop can be mapped as both a point and a building.
+      final key =
+          '${place.name.toLowerCase()}|${place.latitude.toStringAsFixed(3)}|${place.longitude.toStringAsFixed(3)}';
+      if (seen.add(key)) unique.add(place);
+    }
+    unique.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+    return unique;
+  }
+
+  Future<List<NearbyPlace>> _overpass(
+    double lat,
+    double lon,
+    PlaceCategory category,
+    int radiusMeters,
+  ) async {
     final clauses = category.filters
         .map((filter) => '  nwr$filter(around:$radiusMeters,$lat,$lon);')
         .join('\n');
-    final query = '[out:json][timeout:20];\n(\n$clauses\n);\nout center 100;';
+    final query = '[out:json][timeout:10];\n(\n$clauses\n);\nout center 60;';
     final uri = Uri.https('overpass-api.de', '/api/interpreter');
     final response = await http
         .post(uri, headers: _headers, body: {'data': query})
-        .timeout(const Duration(seconds: 25));
+        .timeout(const Duration(seconds: 12));
     if (response.statusCode != 200) {
-      throw http.ClientException(
-        'Nearby search failed (HTTP ${response.statusCode})',
-        uri,
-      );
+      debugPrint('[Outly API] overpass body: ${_short(response.body)}');
+      throw http.ClientException('HTTP ${response.statusCode}', uri);
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    final seen = <String>{};
     final places = <NearbyPlace>[];
     for (final element in (json['elements'] as List? ?? [])) {
       final place = NearbyPlace.fromOverpass(
@@ -102,20 +170,63 @@ class ApiService {
         lat,
         lon,
       );
-      if (place == null) continue;
-      // The same shop can be mapped as both a point and a building.
-      if (!seen.add('${place.name.toLowerCase()}|${place.latitude.toStringAsFixed(3)}|${place.longitude.toStringAsFixed(3)}')) {
-        continue;
-      }
-      places.add(place);
+      if (place != null) places.add(place);
     }
-    places.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
     return places;
+  }
+
+  /// Fallback: Nominatim "restaurant in this box" style searches.
+  Future<List<NearbyPlace>> _nominatimNearby(
+    double lat,
+    double lon,
+    PlaceCategory category,
+    int radiusMeters,
+  ) async {
+    final dLat = radiusMeters / 111000.0;
+    final dLon = dLat / math.cos(lat * math.pi / 180);
+    final box = '${lon - dLon},${lat + dLat},${lon + dLon},${lat - dLat}';
+    final out = <NearbyPlace>[];
+    for (var i = 0; i < category.searchTerms.length; i++) {
+      // Nominatim's usage policy allows at most one request per second.
+      if (i > 0) await Future<void>.delayed(const Duration(milliseconds: 1100));
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': category.searchTerms[i],
+        'format': 'jsonv2',
+        'viewbox': box,
+        'bounded': '1',
+        'limit': '40',
+        'addressdetails': '1',
+        'extratags': '1',
+        'email': contactEmail,
+      });
+      final response = await http
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        debugPrint('[Outly API] nominatim body: ${_short(response.body)}');
+        throw http.ClientException('HTTP ${response.statusCode}', uri);
+      }
+      for (final item in jsonDecode(response.body) as List) {
+        final place = NearbyPlace.fromNominatim(
+          (item as Map).cast<String, dynamic>(),
+          lat,
+          lon,
+        );
+        if (place != null) out.add(place);
+      }
+    }
+    return out;
   }
 
   /// Daily weather for [date] at the given coordinates, via Open-Meteo.
   /// No API key. Returns null when the date is too far ahead to forecast.
-  Future<WeatherInfo?> fetchWeather(
+  Future<WeatherInfo?> fetchWeather(double lat, double lon, DateTime date) =>
+      _guard(
+        'fetchWeather($lat, $lon, ${ymd(date)})',
+        () => _fetchWeather(lat, lon, date),
+      );
+
+  Future<WeatherInfo?> _fetchWeather(
     double lat,
     double lon,
     DateTime date,
@@ -156,6 +267,7 @@ class ApiService {
 
     final response = await http.get(uri).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
+      debugPrint('[Outly API] weather body: ${_short(response.body)}');
       throw http.ClientException(
         'Weather lookup failed (HTTP ${response.statusCode})',
         uri,

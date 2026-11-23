@@ -9,6 +9,7 @@ import '../services/local_store.dart';
 import '../services/reminders.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/theme_menu.dart';
 import 'gala_detail_page.dart';
 import 'gala_editor.dart';
 import 'participants_page.dart';
@@ -45,9 +46,11 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Returns false if the gala couldn't be saved (e.g. date clash).
   Future<bool> saveGala(Gala gala) async {
     if (galas.any(
-      (item) => item.id != gala.id && sameDay(item.date, gala.date),
+      (item) => item.id != gala.id && item.overlaps(gala),
     )) {
-      message('Another gala is already scheduled on ${dateText(gala.date)}.');
+      message(
+        'Another gala is already scheduled on ${dateRangeText(gala.date, gala.endDate)}.',
+      );
       return false;
     }
     final index = galas.indexWhere((item) => item.id == gala.id);
@@ -113,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   bool _isUpcoming(Gala gala) =>
-      daysUntil(gala.date) >= 0 &&
+      daysUntil(gala.lastDay) >= 0 &&
       gala.status != 'Cancelled' &&
       gala.status != 'Completed';
 
@@ -144,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          const ThemeMenuButton(),
           IconButton(
             tooltip: 'Refresh',
             onPressed: load,
@@ -287,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           pill(
-            next == null ? 'MAKE TIME FOR FUN' : countdown(next.date),
+            next == null ? 'MAKE TIME FOR FUN' : whenLabel(next.date, next.endDate),
             color: Colors.white,
             background: Colors.white.withAlpha(38),
             icon: next == null ? null : Icons.schedule,
@@ -309,7 +313,10 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             next == null
                 ? 'Your next great outing starts with one tap.'
-                : [shortDate(next.date), if (place != null) place].join(' · '),
+                : [
+                    shortDateRange(next.date, next.endDate),
+                    if (place != null) place,
+                  ].join(' · '),
             style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 18),
@@ -481,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       infoRow(
                         Icons.calendar_month_outlined,
-                        '${dateText(gala.date)} · ${countdown(gala.date)}',
+                        '${dateRangeText(gala.date, gala.endDate)} · ${whenLabel(gala.date, gala.endDate)}',
                       ),
                       infoRow(
                         Icons.location_on_outlined,

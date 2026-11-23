@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/capture.dart';
 import '../core/constants.dart';
 import '../core/format.dart';
+import '../core/schedule.dart';
 import '../models/gala.dart';
 import '../models/location.dart';
 import '../models/participant.dart';
@@ -36,6 +37,9 @@ class GalaEditor extends StatefulWidget {
 class _GalaEditorState extends State<GalaEditor> {
   late final TextEditingController name, location, plan, tagInput;
   late DateTime date;
+
+  /// Last day of a multi-day outing, or null for a single day.
+  DateTime? endDate;
   String status = 'Planned';
   double lat = 0, lon = 0;
   List<LocationSuggestion> suggestions = [];
@@ -67,13 +71,14 @@ class _GalaEditorState extends State<GalaEditor> {
     plan = TextEditingController(text: gala?.plan);
     tagInput = TextEditingController();
     date = gala?.date ?? DateTime.now().add(const Duration(days: 1));
+    endDate = gala?.endDate;
     status = gala?.status ?? 'Planned';
     lat = gala?.latitude ?? 0;
     lon = gala?.longitude ?? 0;
     weatherText = gala?.weather ?? '';
     weatherCode = gala?.weatherCode ?? -1;
     thumbnail = gala?.thumbnail ?? '';
-    locations.addAll(gala?.locations ?? const []);
+    locations.addAll(sortStops(gala?.locations ?? const [], date));
     if (locations.isEmpty && lat != 0 && lon != 0) {
       locations.add(
         GalaLocation(name: gala?.location ?? '', latitude: lat, longitude: lon),
@@ -103,21 +108,114 @@ class _GalaEditorState extends State<GalaEditor> {
     super.dispose();
   }
 
+  /// Names of the guests ticked in the guest list, for the plan image.
+  List<String> get guestNames => [
+    for (final person in widget.people)
+      if (selected.contains(person.id) && person.name.trim().isNotEmpty)
+        person.name.trim(),
+  ];
+
   // ----- Date / weather -----
 
-  Future<void> pickDate() async {
-    final picked = await showDatePicker(
+  int get dayCount {
+    final end = endDate;
+    if (end == null) return 1;
+    final days = DateTime.utc(end.year, end.month, end.day)
+            .difference(DateTime.utc(date.year, date.month, date.day))
+            .inDays +
+        1;
+    return days < 1 ? 1 : days;
+  }
+
+  bool get multiDay => dayCount > 1;
+
+  Future<void> pickDates() async {
+    final start = DateTime(date.year, date.month, date.day);
+    final end = endDate == null || endDate!.isBefore(start) ? start : endDate!;
+    final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 730)),
-      initialDate: date,
+      initialDateRange: DateTimeRange(start: start, end: end),
+      helpText: 'Pick the dates. Tap one day twice for a single-day outing.',
     );
-    if (picked != null) {
-      setState(() {
-        date = picked;
-      });
-      loadWeather();
-    }
+    if (picked == null) return;
+    final oldStart = date;
+    setState(() {
+      date = picked.start;
+      endDate = sameDay(picked.start, picked.end) ? null : picked.end;
+      // Keep each stop on the same day number (Day 1, Day 2...) when the
+      // dates move, and pull stops back in if the outing got shorter.
+      for (var i = 0; i < locations.length; i++) {
+        final day = stopDay(locations[i], oldStart);
+        final newDay = day >= dayCount ? dayCount - 1 : day;
+        locations[i] = locations[i].copyWith(
+          date: newDay == 0 ? '' : ymd(addDays(date, newDay)),
+        );
+      }
+      resort(locations.isEmpty ? null : locations[activeLocation]);
+    });
+    loadWeather();
+  }
+
+  /// Sorts the stops by day, then time, and keeps [focus] as the selected one.
+  void resort(GalaLocation? focus) {
+    final sorted = sortStops(locations, date);
+    locations
+      ..clear()
+      ..addAll(sorted);
+    final index = focus == null
+        ? -1
+        : locations.indexWhere((stop) => identical(stop, focus));
+    activeLocation = index < 0 ? 0 : index;
+  }
+
+  /// Replaces the stop at [index] and re-sorts, keeping the selection.
+  void updateStop(int index, GalaLocation updated) {
+    setState(() {
+      final focus = index == activeLocation
+          ? updated
+          : (activeLocation < locations.length
+                ? locations[activeLocation]
+                : null);
+      locations[index] = updated;
+      resort(focus);
+    });
+  }
+
+  Future<void> pickDay(int index) async {
+    final stop = locations[index];
+    final current = stopDay(stop, date);
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Which day?'),
+        children: [
+          for (var i = 0; i < dayCount; i++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, i),
+              child: Row(
+                children: [
+                  Icon(
+                    i == current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                    color: dialogContext.brandColor,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(dayLabel(i, date)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    updateStop(
+      index,
+      stop.copyWith(date: picked == 0 ? '' : ymd(addDays(date, picked))),
+    );
   }
 
   Future<void> loadWeather() async {
@@ -202,26 +300,31 @@ class _GalaEditorState extends State<GalaEditor> {
         )) {
       return;
     }
+    final hadStops = locations.isNotEmpty;
     setState(() {
-      locations.add(
-        GalaLocation(
-          name: name,
-          latitude: latitude,
-          longitude: longitude,
-          local: local,
-        ),
+      final previous = activeLocation < locations.length
+          ? locations[activeLocation]
+          : null;
+      // New stops land on the same day as the selected stop.
+      final stop = GalaLocation(
+        name: name,
+        latitude: latitude,
+        longitude: longitude,
+        local: local,
+        date: previous?.date ?? '',
       );
+      locations.add(stop);
       // Nearby suggestions are extra stops: the weather and the nearby
-      // search stay anchored to the first stop.
-      final anchored = keepAnchor && locations.length > 1;
+      // search stay anchored to the selected stop.
+      final anchored = keepAnchor && previous != null;
+      resort(anchored ? previous : stop);
       if (!anchored) {
-        activeLocation = locations.length - 1;
         location.clear();
         lat = latitude;
         lon = longitude;
       }
     });
-    if (!(keepAnchor && locations.length > 1)) loadWeather();
+    if (!(keepAnchor && hadStops)) loadWeather();
   }
 
   void selectLocation(int index) {
@@ -295,7 +398,7 @@ class _GalaEditorState extends State<GalaEditor> {
       initialTime: parseTime(old.time) ?? const TimeOfDay(hour: 18, minute: 0),
     );
     if (picked == null || !mounted) return;
-    setState(() => locations[index] = old.copyWith(time: formatTime(picked)));
+    updateStop(index, old.copyWith(time: formatTime(picked)));
   }
 
   Future<void> openPinMap() async {
@@ -401,8 +504,9 @@ class _GalaEditorState extends State<GalaEditor> {
         id: widget.gala?.id,
         name: name.text.trim(),
         date: date,
+        endDate: endDate,
         location: location.text.trim(),
-        locations: locations,
+        locations: sortStops(locations, date),
         latitude: lat,
         longitude: lon,
         status: status,
@@ -468,37 +572,32 @@ class _GalaEditorState extends State<GalaEditor> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: pickDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Date',
-                        prefixIcon: Icon(Icons.calendar_today_outlined),
-                      ),
-                      child: Text(dateText(date)),
-                    ),
-                  ),
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: pickDates,
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: multiDay ? 'Dates · $dayCount days' : 'Date',
+                  prefixIcon: const Icon(Icons.calendar_today_outlined),
+                  suffixIcon: const Icon(Icons.edit_calendar_outlined),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: status,
-                    decoration: const InputDecoration(labelText: 'Status'),
-                    items: galaStatuses
-                        .map(
-                          (item) =>
-                              DropdownMenuItem(value: item, child: Text(item)),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => status = value ?? status),
-                  ),
-                ),
-              ],
+                child: Text(dateRangeText(date, endDate)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const HintText(
+              'Planning a trip? Pick a range, then give each stop its own day.',
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: status,
+              decoration: const InputDecoration(labelText: 'Status'),
+              items: galaStatuses
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => status = value ?? status),
             ),
           ]),
           section('Type of outing', [
@@ -649,7 +748,13 @@ class _GalaEditorState extends State<GalaEditor> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '${place.time.isEmpty ? 'No time set' : timeLabel(place.time)} · ${activeLocation == index ? 'Selected' : 'Tap to select'}',
+                        [
+                          if (multiDay) dayLabel(stopDay(place, date), date),
+                          place.time.isEmpty
+                              ? 'No time set'
+                              : timeLabel(place.time),
+                          if (activeLocation == index) 'Selected',
+                        ].join(' · '),
                       ),
                       onTap: () => selectLocation(index),
                       trailing: Row(
@@ -660,21 +765,44 @@ class _GalaEditorState extends State<GalaEditor> {
                             icon: const Icon(Icons.access_time),
                             onPressed: () => pickTime(index),
                           ),
-                          IconButton(
-                            tooltip: 'Rename location',
-                            icon: const Icon(Icons.edit_outlined),
-                            onPressed: () => renameLocation(index),
-                          ),
-                          IconButton(
-                            tooltip: 'Remove location',
-                            icon: const Icon(Icons.close),
-                            onPressed: () => removeLocation(index),
+                          PopupMenuButton<String>(
+                            tooltip: 'More',
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'day':
+                                  pickDay(index);
+                                case 'rename':
+                                  renameLocation(index);
+                                case 'remove':
+                                  removeLocation(index);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              if (multiDay)
+                                const PopupMenuItem(
+                                  value: 'day',
+                                  child: Text('Change day'),
+                                ),
+                              const PopupMenuItem(
+                                value: 'rename',
+                                child: Text('Rename'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'remove',
+                                child: Text('Remove'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     );
                   }).toList(),
                 ),
+              ),
+            if (locations.length > 1)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: HintText('Stops are sorted by day and time automatically.'),
               ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -729,6 +857,8 @@ class _GalaEditorState extends State<GalaEditor> {
                 child: PlanCard(
                   name: name.text,
                   date: date,
+                  endDate: endDate,
+                  guests: guestNames,
                   locations: locations,
                   tags: tags,
                   plan: plan.text,
@@ -766,7 +896,7 @@ class _GalaEditorState extends State<GalaEditor> {
                 contentPadding: EdgeInsets.zero,
                 value: selected.contains(person.id),
                 title: Text(person.name.isEmpty ? 'Unnamed' : person.name),
-                subtitle: Text(person.email),
+                subtitle: person.email.isEmpty ? null : Text(person.email),
                 onChanged: (value) => setState(
                   () => value == true
                       ? selected.add(person.id)

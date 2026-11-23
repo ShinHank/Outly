@@ -85,3 +85,34 @@ String planFileName(String name) {
       : name.trim().replaceAll(RegExp(r'\s+'), '_');
   return '${base}_plan.png';
 }
+
+DateTime addDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n);
+
+/// "11/20/2026" for one day, "11/20/2026 – 11/22/2026" for a range.
+String dateRangeText(DateTime start, DateTime? end) =>
+    end == null || sameDay(start, end)
+    ? dateText(start)
+    : '${dateText(start)} – ${dateText(end)}';
+
+/// "Fri, Nov 20, 2026" or "Fri, Nov 20 – Sun, Nov 22, 2026".
+String longDateRange(DateTime start, DateTime? end) =>
+    end == null || sameDay(start, end)
+    ? longDate(start)
+    : '${shortDate(start)} – ${shortDate(end)}, ${end.year}';
+
+/// "Fri, Nov 20" or "Fri, Nov 20 – Sun, Nov 22".
+String shortDateRange(DateTime start, DateTime? end) =>
+    end == null || sameDay(start, end)
+    ? shortDate(start)
+    : '${shortDate(start)} – ${shortDate(end)}';
+
+/// "Today", "In 3 days", or "Happening now" while a multi-day outing runs.
+String whenLabel(DateTime start, DateTime? end) {
+  final last = end ?? start;
+  if (daysUntil(start) < 0 && daysUntil(last) >= 0) return 'Happening now';
+  return countdown(start);
+}
+
+/// "Day 2 · Sat, Nov 21" for the [index]th day (0-based) of an outing.
+String dayLabel(int index, DateTime start) =>
+    'Day ${index + 1} · ${shortDate(addDays(start, index))}';

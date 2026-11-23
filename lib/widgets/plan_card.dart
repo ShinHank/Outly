@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/format.dart';
+import '../core/schedule.dart';
 import '../models/location.dart';
 import '../models/weather_info.dart';
 import '../theme/app_theme.dart';
@@ -12,19 +13,27 @@ class PlanCard extends StatelessWidget {
     super.key,
     required this.name,
     required this.date,
+    this.endDate,
     required this.locations,
     required this.tags,
     required this.plan,
     this.weatherText = '',
     this.weatherCode = -1,
+    this.guests = const [],
   });
   final String name;
   final DateTime date;
+
+  /// Last day of a multi-day outing, or null for a single day.
+  final DateTime? endDate;
   final List<GalaLocation> locations;
   final List<String> tags;
   final String plan;
   final String weatherText;
   final int weatherCode;
+
+  /// Names of the people who are coming.
+  final List<String> guests;
 
   @override
   Widget build(BuildContext context) => AspectRatio(
@@ -86,10 +95,13 @@ class PlanCard extends StatelessWidget {
   );
 
   Widget canvas() {
-    final stops = locations.take(4).toList();
+    final multiDay = endDate != null && !sameDay(date, endDate!);
+    final stops = locations.take(5).toList();
     final extraStops = locations.length - stops.length;
     final shownTags = tags.take(6).toList();
     final extraTags = tags.length - shownTags.length;
+    final shownGuests = guests.take(8).toList();
+    final extraGuests = guests.length - shownGuests.length;
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -131,7 +143,7 @@ class PlanCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            line(Icons.calendar_month_outlined, longDate(date)),
+            line(Icons.calendar_month_outlined, longDateRange(date, endDate)),
             if (weatherText.isNotEmpty)
               line(weatherIconFor(weatherCode), weatherText),
             const SizedBox(height: 18),
@@ -173,9 +185,13 @@ class PlanCard extends StatelessWidget {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    stops[i].time.isEmpty
-                                        ? shortName(stops[i].name)
-                                        : '${timeLabel(stops[i].time)}  ${shortName(stops[i].name)}',
+                                    [
+                                      if (multiDay)
+                                        'D${stopDay(stops[i], date) + 1}',
+                                      if (stops[i].time.isNotEmpty)
+                                        timeLabel(stops[i].time),
+                                      shortName(stops[i].name),
+                                    ].join('  '),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -209,6 +225,22 @@ class PlanCard extends StatelessWidget {
                             ...shownTags.map(tagPill),
                             if (extraTags > 0) tagPill('+$extraTags'),
                           ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (shownGuests.isNotEmpty) ...[
+                        caption("WHO'S COMING"),
+                        Text(
+                          extraGuests > 0
+                              ? '${shownGuests.join(', ')} +$extraGuests more'
+                              : shownGuests.join(', '),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            height: 1.35,
+                          ),
                         ),
                         const SizedBox(height: 16),
                       ],

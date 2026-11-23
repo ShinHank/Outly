@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/capture.dart';
 import '../core/constants.dart';
 import '../core/format.dart';
+import '../core/schedule.dart';
 import '../models/expense.dart';
 import '../models/gala.dart';
 import '../models/location.dart';
@@ -196,6 +197,11 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                   child: PlanCard(
                     name: gala.name,
                     date: gala.date,
+                    endDate: gala.endDate,
+                    guests: [
+                      for (final person in invited)
+                        if (person.name.trim().isNotEmpty) person.name.trim(),
+                    ],
                     locations: gala.places,
                     tags: gala.tags,
                     plan: gala.plan,
@@ -264,6 +270,8 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
             latitude: place.latitude,
             longitude: place.longitude,
             local: !place.isChain,
+            // Same day as the last stop, so trips stay grouped sensibly.
+            date: gala.places.isEmpty ? '' : gala.places.last.date,
           ),
         ],
       ),
@@ -536,7 +544,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 statusPill(gala.status),
                 const SizedBox(width: 8),
                 pill(
-                  countdown(gala.date),
+                  whenLabel(gala.date, gala.endDate),
                   color: context.muted,
                   icon: Icons.schedule,
                 ),
@@ -553,7 +561,12 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
               ),
             ),
             const SizedBox(height: 4),
-            infoRow(Icons.calendar_month_outlined, longDate(gala.date)),
+            infoRow(
+              Icons.calendar_month_outlined,
+              gala.isMultiDay
+                  ? '${longDateRange(gala.date, gala.endDate)} · ${gala.dayCount} days'
+                  : longDate(gala.date),
+            ),
             if (weatherText.isNotEmpty)
               infoRow(
                 liveWeather?.icon ?? weatherIconFor(gala.weatherCode),
@@ -651,7 +664,27 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
       Card(
         child: Column(
           children: [
-            for (var i = 0; i < places.length; i++)
+            for (var i = 0; i < places.length; i++) ...[
+              if (gala.isMultiDay &&
+                  (i == 0 ||
+                      stopDay(places[i], gala.date) !=
+                          stopDay(places[i - 1], gala.date)))
+                Container(
+                  width: double.infinity,
+                  color: context.soft,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    dayLabel(stopDay(places[i], gala.date), gala.date),
+                    style: TextStyle(
+                      color: context.brandColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
               ListTile(
                 dense: true,
                 leading: CircleAvatar(
@@ -693,6 +726,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 ),
                 onTap: () => mapController.move(points[i], 16),
               ),
+            ],
           ],
         ),
       ),
@@ -723,7 +757,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 ),
               ),
               title: Text(person.name.isEmpty ? 'Unnamed' : person.name),
-              subtitle: Text(person.email),
+              subtitle: person.email.isEmpty ? null : Text(person.email),
             );
           }).toList(),
         ),

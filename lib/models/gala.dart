@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../core/schedule.dart';
 import 'expense.dart';
 import 'location.dart';
 
@@ -9,6 +10,7 @@ class Gala {
     String? id,
     required this.name,
     required this.date,
+    this.endDate,
     required this.location,
     this.locations = const [],
     this.latitude = 0,
@@ -25,6 +27,9 @@ class Gala {
   final String id;
   final String name;
   final DateTime date;
+
+  /// Last day of a multi-day outing. Null for a single-day outing.
+  final DateTime? endDate;
   final String location;
   final List<GalaLocation> locations;
   final double latitude;
@@ -52,9 +57,31 @@ class Gala {
     }
   }();
 
-  /// Locations, including older galas that only stored one coordinate.
+  DateTime get startDay => DateTime(date.year, date.month, date.day);
+
+  DateTime get lastDay {
+    final end = endDate;
+    if (end == null) return startDay;
+    final day = DateTime(end.year, end.month, end.day);
+    return day.isBefore(startDay) ? startDay : day;
+  }
+
+  int get dayCount =>
+      DateTime.utc(lastDay.year, lastDay.month, lastDay.day)
+          .difference(DateTime.utc(startDay.year, startDay.month, startDay.day))
+          .inDays +
+      1;
+
+  bool get isMultiDay => dayCount > 1;
+
+  /// True when the two outings share at least one day.
+  bool overlaps(Gala other) =>
+      !lastDay.isBefore(other.startDay) && !other.lastDay.isBefore(startDay);
+
+  /// Locations sorted by day and time, including older galas that only
+  /// stored one coordinate.
   List<GalaLocation> get places {
-    if (locations.isNotEmpty) return locations;
+    if (locations.isNotEmpty) return sortStops(locations, date);
     if (latitude != 0 && longitude != 0) {
       return [
         GalaLocation(
@@ -80,6 +107,7 @@ class Gala {
     id: id,
     name: name,
     date: date ?? this.date,
+    endDate: endDate,
     location: location,
     locations: locations ?? this.locations,
     latitude: latitude,
@@ -98,6 +126,7 @@ class Gala {
     'id': id,
     'name': name,
     'scheduledDate': date.toIso8601String(),
+    'endDate': endDate?.toIso8601String(),
     'location': location,
     'locations': locations.map((item) => item.toJson()).toList(),
     'latitude': latitude,
@@ -126,6 +155,7 @@ class Gala {
       date:
           DateTime.tryParse(json['scheduledDate'] as String? ?? '') ??
           DateTime.now(),
+      endDate: DateTime.tryParse(json['endDate'] as String? ?? ''),
       location: json['location'] as String? ?? '',
       locations: ((json['locations'] as List?) ?? [])
           .map(

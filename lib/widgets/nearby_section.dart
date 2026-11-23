@@ -87,11 +87,11 @@ class _NearbySectionState extends State<NearbySection> {
         loading = false;
         error = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted || token != request) return;
       setState(() {
         loading = false;
-        error = 'Could not load nearby places. Check your connection.';
+        error = 'Could not load nearby places.\n$e';
       });
     }
   }
@@ -186,7 +186,7 @@ class _NearbySectionState extends State<NearbySection> {
             children: [
               Icon(Icons.cloud_off_outlined, color: context.muted),
               const SizedBox(width: 12),
-              Expanded(child: Text(error!)),
+              Expanded(child: Text(error!, style: const TextStyle(fontSize: 13))),
               TextButton(onPressed: retry, child: const Text('Retry')),
             ],
           ),

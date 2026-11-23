@@ -16,6 +16,7 @@ class GalaLocation {
     required this.longitude,
     this.time = '',
     this.local = false,
+    this.date = '',
   });
   final String name;
   final double latitude;
@@ -24,17 +25,22 @@ class GalaLocation {
   /// 24h "HH:mm", or empty when no time is set.
   final String time;
 
+  /// The day of this stop as "yyyy-MM-dd". Empty means the first day.
+  final String date;
+
   /// True for stops picked from the nearby suggestions that are independent
   /// local businesses (SDG 8).
   final bool local;
 
-  GalaLocation copyWith({String? name, String? time}) => GalaLocation(
-    name: name ?? this.name,
-    latitude: latitude,
-    longitude: longitude,
-    time: time ?? this.time,
-    local: local,
-  );
+  GalaLocation copyWith({String? name, String? time, String? date}) =>
+      GalaLocation(
+        name: name ?? this.name,
+        latitude: latitude,
+        longitude: longitude,
+        time: time ?? this.time,
+        local: local,
+        date: date ?? this.date,
+      );
 
   Map<String, dynamic> toJson() => {
     'name': name,
@@ -42,6 +48,7 @@ class GalaLocation {
     'longitude': longitude,
     'time': time,
     'local': local,
+    'date': date,
   };
 
   factory GalaLocation.fromJson(Map<String, dynamic> json) => GalaLocation(
@@ -50,5 +57,6 @@ class GalaLocation {
     longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
     time: json['time'] as String? ?? '',
     local: json['local'] as bool? ?? false,
+    date: json['date'] as String? ?? '',
   );
 }

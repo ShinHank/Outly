@@ -56,4 +56,31 @@ void main() {
     expect(distanceLabel(0.25), '250 m');
     expect(distanceLabel(2.34), '2.3 km');
   });
+
+  test('parses a Nominatim result and flags brands', () {
+    final p = NearbyPlace.fromNominatim({
+      'lat': '14.6005',
+      'lon': '120.9842',
+      'name': 'Aling Rosa Bakery',
+      'type': 'bakery',
+      'address': {'road': 'Rizal St'},
+      'extratags': <String, dynamic>{},
+    }, lat, lon)!;
+    expect(p.detail, 'Bakery · Rizal St');
+    expect(p.isChain, isFalse);
+
+    final chain = NearbyPlace.fromNominatim({
+      'lat': '14.6',
+      'lon': '120.98',
+      'name': 'Big Chain',
+      'type': 'cafe',
+      'extratags': {'brand': 'Big Chain'},
+    }, lat, lon)!;
+    expect(chain.isChain, isTrue);
+
+    expect(
+      NearbyPlace.fromNominatim({'lat': '1', 'lon': '1', 'type': 'road'}, lat, lon),
+      isNull,
+    );
+  });
 }
