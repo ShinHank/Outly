@@ -39,33 +39,41 @@ class ParticipantsPage extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
     children: [
-      Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'Your people',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          IconButton.filledTonal(
-            tooltip: 'Add participant',
-            onPressed: () => add(context),
-            style: IconButton.styleFrom(
-              backgroundColor: context.soft,
-              foregroundColor: context.brandColor,
-            ),
-            icon: const Icon(Icons.person_add_alt_1),
-          ),
-        ],
+      const Text(
+        'Your people',
+        style: TextStyle(
+          fontSize: 26,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.5,
+        ),
       ),
       const SizedBox(height: 4),
       const HintText('Keep contacts here so they can be invited to any gala.'),
       const SizedBox(height: 18),
-      if (people.isEmpty) const MessageCard('No participants yet.'),
+      Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => add(context),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                Icon(Icons.person_add_alt_1, color: context.brandColor),
+                const SizedBox(width: 10),
+                Text(
+                  'Add people',
+                  style: TextStyle(
+                    color: context.brandColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
       for (final person in people)
         Padding(
           padding: const EdgeInsets.only(bottom: 10),

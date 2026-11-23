@@ -21,6 +21,7 @@ import '../models/nearby_place.dart';
 import '../models/participant.dart';
 import '../models/weather_info.dart';
 import '../services/api_service.dart';
+import '../services/local_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/expense_dialog.dart';
@@ -93,6 +94,9 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
             GalaEditor(gala: gala, people: widget.people, api: widget.api),
       ),
     );
+    final updatedPeople = await LocalStore().participants();
+    widget.people.clear();
+    widget.people.addAll(updatedPeople);
     if (result == null) return;
     if (await widget.onSave(result) && mounted) {
       setState(() {
@@ -263,7 +267,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
                 ),
               ], icon: Icons.notes_outlined),
             section(
-              'Guest list',
+              'Participants',
               participantWidgets(invited),
               icon: Icons.people_outline,
             ),
@@ -791,7 +795,7 @@ class _GalaDetailPageState extends State<GalaDetailPage> {
     if (invited.isEmpty) {
       return const [
         MessageCard(
-          'No guests yet. Tap the pencil and pick people from your Participants list.',
+          'No participants yet. Tap the pencil to add or select participants.',
         ),
       ];
     }

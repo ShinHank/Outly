@@ -72,20 +72,26 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => GalaEditor(gala: gala, people: people, api: api),
       ),
     );
+    people = await store.participants();
     if (result != null) await saveGala(result);
+    if (mounted) setState(() {});
   }
 
-  Future<void> openDetail(Gala gala) => Navigator.push<void>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => GalaDetailPage(
-        gala: gala,
-        people: people,
-        api: api,
-        onSave: saveGala,
+  Future<void> openDetail(Gala gala) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GalaDetailPage(
+          gala: gala,
+          people: people,
+          api: api,
+          onSave: saveGala,
+        ),
       ),
-    ),
-  );
+    );
+    people = await store.participants();
+    if (mounted) setState(() {});
+  }
 
   Future<void> deleteGala(Gala gala) async {
     final ok = await showDialog<bool>(
@@ -148,11 +154,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           const ThemeMenuButton(),
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
         ],
       ),
       body: IndexedStack(

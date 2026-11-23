@@ -15,9 +15,11 @@ import '../models/location.dart';
 import '../models/participant.dart';
 import '../models/weather_info.dart';
 import '../services/api_service.dart';
+import '../services/local_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/nearby_section.dart';
+import '../widgets/participant_dialog.dart';
 import '../widgets/plan_card.dart';
 import 'pin_picker_page.dart';
 
@@ -50,6 +52,7 @@ class _GalaEditorState extends State<GalaEditor> {
   Timer? suggestionTimer;
   final planBoundaryKey = GlobalKey();
   final selected = <String>{};
+  late List<Participant> peopleList;
   bool busy = false;
   bool saving = false;
 
@@ -94,6 +97,7 @@ class _GalaEditorState extends State<GalaEditor> {
     }
     tags.addAll(gala?.tags ?? const []);
     selected.addAll(gala?.participantIds ?? []);
+    peopleList = [...widget.people];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) loadWeather();
     });
@@ -109,9 +113,28 @@ class _GalaEditorState extends State<GalaEditor> {
     super.dispose();
   }
 
-  /// Names of the guests ticked in the guest list, for the plan image.
+  Future<void> addParticipantDirectly() async {
+    final result = await showDialog<Participant>(
+      context: context,
+      builder: (_) => const ParticipantDialog(),
+    );
+    if (result != null) {
+      final index = peopleList.indexWhere((person) => person.id == result.id);
+      if (index == -1) {
+        peopleList.add(result);
+      } else {
+        peopleList[index] = result;
+      }
+      await LocalStore().saveParticipants(peopleList);
+      setState(() {
+        selected.add(result.id);
+      });
+    }
+  }
+
+  /// Names of the participants ticked in the participant list, for the plan image.
   List<String> get guestNames => [
-    for (final person in widget.people)
+    for (final person in peopleList)
       if (selected.contains(person.id) && person.name.trim().isNotEmpty)
         person.name.trim(),
   ];
@@ -942,11 +965,30 @@ class _GalaEditorState extends State<GalaEditor> {
               ],
             ),
           ]),
-          section('Guest list', [
-            if (widget.people.isEmpty)
-              const HintText('Add participants from the Participants tab.'),
-            ...widget.people.map(
-              (person) => CheckboxListTile(
+          section('Participants', [
+            Row(
+              children: [
+                Expanded(
+                  child: HintText(
+                    peopleList.isEmpty
+                        ? 'No participants yet. Tap "Add participants" to create one.'
+                        : 'Select participants or add new ones:',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: addParticipantDirectly,
+                  icon: const Icon(Icons.person_add_alt_1, size: 18),
+                  label: const Text('Add participants'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.brandColor,
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (final person in peopleList)
+              CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: selected.contains(person.id),
                 title: Text(person.name.isEmpty ? 'Unnamed' : person.name),
@@ -957,7 +999,6 @@ class _GalaEditorState extends State<GalaEditor> {
                       : selected.remove(person.id),
                 ),
               ),
-            ),
           ]),
         ],
       ),
